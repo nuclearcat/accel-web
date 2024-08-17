@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACCEL-PPP Interface</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <script>
+        var activeusers = 0;
+        var current_section = '';
+
+        function showabout() {
+            var modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.tabIndex = -1;
+            modal.role = 'dialog';
+            modal.innerHTML = `
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">About</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>ACCEL-PPP Dashboard</p>
+                            <p>Version: 1.0</p>
+                            <p>Author: <a href="https://github.com/nuclearcat">Denys Fedoryshchenko</a></p>
+                            <p>License: LGPL-2.1</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            var modal = new bootstrap.Modal(modal);
+            modal.show();
+        }
+
+
+        function liveIf(ifname) {
+            //alert('Live traffic for interface ' + ifname);
+            window.open('/live?ifname=' + ifname, '_blank');
+            // close modal
+            var modal = document.querySelector('.modal');
+            var modalInstance = bootstrap.Modal.getInstance(modal);
+            modalInstance.hide();
+        }
+
+        function termIf(ifname) {
+            uri = '/api/terminate?ifname=' + ifname;
+            // on error it might be not json
+            fetch(uri)
+                .then(response => response.json())
+                .then(data => {
+                    //console.log(data);
+                    if (data.result == 'ok') {
+                        alert('Interface ' + ifname + ' terminated successfully');
+                    } else {
+                        alert('Error terminating interface ' + ifname + ': ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error terminating interface ' + ifname + ': ' + error);
+                });
+            // close modal
+            var modal = document.querySelector('.modal');
+            var modalInstance = bootstrap.Modal.getInstance(modal);
+            modalInstance.hide();
+        }
+
+        function showMenu(session) {
+            // make sure user have interface name
+            if (session.ifname == '') {
+                alert('User ' + session.user + ' does not have interface name');
+                return;
+            }
+            var modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.tabIndex = -1;
+            modal.role = 'dialog';
+            modal.innerHTML = `
+                <div class="modal-dialog" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">User ${session.user} details</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Interface: ${session.ifname}</p>
+                            <p>MAC: ${session.mac}</p>
+                            <p>IP: ${session.ip}</p>
+                            <p>Protocol: ${session.proto}</p>
+                            <p>Compression: ${session.comp}</p>
+                            <p>State: ${session.state}</p>
+                            <p>Uptime: ${session.uptime}</p>
+                        </div>
+                        <!-- show buttons for actions: terminate -->
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-primary" id="livetraf">Live traffic</button>
+                            <button type="button" class="btn btn-primary" id="terminate">Terminate</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close window</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            // add event listeners for buttons
+            modal.querySelector('#livetraf').onclick = function() {
+                liveIf(session.ifname);
+            };
+            modal.querySelector('#terminate').onclick = function() {
+                termIf(session.ifname);
+            };
+
+            var modal = new bootstrap.Modal(modal);
+            modal.show();
+        }
+
+        function filterdata() {
+            var searchUser = document.getElementById('searchUser').value;
+            var table = document.querySelector('#users table');
+            var tbody = table.querySelector('tbody');
+            // if empty search, show all
+            if (searchUser.length == 0) {
+                tbody.childNodes.forEach(function(tr) {
+                    tr.style.display = '';
+                });
+                return;
+            }
+            tbody.childNodes.forEach(function(tr) {
+                var found = false;
+                tr.childNodes.forEach(function(td) {
+                    if (td.innerText.includes(searchUser)) {
+                        found = true;
+                    }
+                });
+                if (found) {
+                    tr.style.display = '';
+                } else {
+                    tr.style.display = 'none';
+                }
+            });
+        }
+
+        // Make paging for users
+        function activate_paging() {
+            var table = document.querySelector('#users table');
+            var tbody = table.querySelector('tbody');
+            var rows = tbody.childNodes;
+            var rowsPerPage = 10;
+            var currentPage = 0;
+            var numPages = Math.ceil(rows.length / rowsPerPage);
+            var paging = document.createElement('div');
+            paging.className = 'paging';
+            var prevButton = document.createElement('button');
+            prevButton.innerText = 'Previous';
+            prevButton.onclick = function() {
+                if (currentPage > 0) {
+                    currentPage--;
+                    updatePage();
+                }
+            };
+            paging.appendChild(prevButton);
+            var nextButton = document.createElement('button');
+            nextButton.innerText = 'Next';
+            nextButton.onclick = function() {
+                if (currentPage < numPages - 1) {
+                    currentPage++;
+                    updatePage();
+                }
+            };
+            paging.appendChild(nextButton);
+            table.parentNode.insertBefore(paging, table.nextSibling);
+            function updatePage() {
+                var start = currentPage * rowsPerPage;
+                var end = start + rowsPerPage;
+                rows.forEach(function(row, index) {
+                    if (index >= start && index < end) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            }
+            updatePage();
+        }
+
+        function getsysinfo() {
+            fetch('/api/sysinfo')
+                .then(response => response.json())
+                .then(data => {
+                    //console.log(data);
+                    document.getElementById('accelver').innerText = data.accelversion;
+                    // systemload returned in format "X.X" and we need to add % to it
+                    document.getElementById('systemload').innerText = data.systemload + ' %';
+                    document.getElementById('accelstats').innerHTML = '';
+                    data.accelstats.split('\n').forEach(function(line) {
+                        if (line.length > 0) {                            
+                            var li = document.createElement('li');
+                            li.className = 'list-group-item';
+                            li.innerText = line;
+                            // is there tab or space in the beginning? shift it to the right
+                            if (line.match(/^[ \t]/)) {
+                                trimmed_line = line.trim();
+                                //console.log('trimmed_line: ' + trimmed_line);
+                                //if (trimmed_line.startsWith('active:') && current_section == 'sessions:') {
+                                    if (trimmed_line.startsWith('active:')) {
+                                    split_line = trimmed_line.split(' ');
+                                    activeusers = parseInt(split_line[1]);
+                                    document.getElementById('activeusers').innerText = activeusers;
+                                }
+                                li.style.marginLeft = '20px';
+                            } else {
+                                current_section = line.replace(/:$/, '');
+                                //console.log('current_section: ' + current_section);
+                            }
+                            document.getElementById('accelstats').appendChild(li);
+                        }
+                    });
+                    // we have also sessions with list of users, fields ifname, user, mac, ip, proto, comp, state, uptime
+                    // we need to parse it and display it in the users card
+                    var fields = ['ifname', 'user', 'mac', 'ip', 'proto', 'comp', 'state', 'uptime'];
+                    // usersbody clean
+                    var usersbody = document.getElementById('usersbody');
+                    usersbody.innerHTML = '';
+                    data.sessions.forEach(function(session) {
+                        var tr = document.createElement('tr');
+                        fields.forEach(function(field) {
+                            var td = document.createElement('td');
+                            td.innerText = session[field];
+                            tr.appendChild(td);
+                        });
+                        // add tr hover effect, on hover change each cell background color
+                        tr.onmouseover = function() {
+                            tr.childNodes.forEach(function(td) {
+                                // dark grey background color
+                                td.style.backgroundColor = '#343a40';
+                            });
+                        };
+                        tr.onmouseout = function() {
+                            tr.childNodes.forEach(function(td) {
+                                td.style.backgroundColor = '';
+                            });
+                        };
+                        // make tr clickable to show more info about the user
+                        tr.ondblclick = function() {
+                            showMenu(session);
+                        };
+                        usersbody.appendChild(tr);
+                    });
+                    activate_paging();
+                    /*
+                    var users = document.getElementById('users');
+                    users.innerHTML = '';
+                    var table = document.createElement('table');
+                    table.className = 'table table-striped';
+                    var thead = document.createElement('thead');
+                    var tr = document.createElement('tr');
+                    fields.forEach(function(field) {
+                        var th = document.createElement('th');
+                        th.innerText = field;
+                        tr.appendChild(th);
+                    });
+                    thead.appendChild(tr);
+                    table.appendChild(thead);
+                    var tbody = document.createElement('tbody');
+                    data.sessions.forEach(function(session) {
+                        var tr = document.createElement('tr');
+                        fields.forEach(function(field) {
+                            var td = document.createElement('td');
+                            td.innerText = session[field];
+                            tr.appendChild(td);
+                        });
+                        // add tr hover effect, on hover change each cell background color
+                        tr.onmouseover = function() {
+                            tr.childNodes.forEach(function(td) {
+                                // dark grey background color
+                                td.style.backgroundColor = '#343a40';
+                            });
+                        };
+                        tr.onmouseout = function() {
+                            tr.childNodes.forEach(function(td) {
+                                td.style.backgroundColor = '';
+                            });
+                        };
+                        
+
+                        // make tr clickable to show more info about the user
+                        tr.onclick = function() {
+                            //alert('User ' + session.user + ' is connected via ' + session.proto + ' from ' + session.ip + ' with MAC ' + session.mac);
+                            showMenu(session);
+                        };
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    users.appendChild(table);
+                    */
+                });
+        }
+
+        var refreshInterval = 0;
+        var refreshTimer = null;
+        function setrefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+            }
+            refreshInterval = parseInt(document.getElementById('refreshSelect').value);
+            if (refreshInterval > 0) {
+                refreshTimer = setInterval(getsysinfo, refreshInterval * 1000);
+            } else {
+                refreshTimer = null;
+            }
+        }
+
+        window.onload = function() {
+            // Bootstrap 5 uses data-bs-toggle instead of data-toggle
+            var toggler = document.querySelector('.navbar-toggler');
+            toggler.setAttribute('data-bs-toggle', 'collapse');
+            toggler.setAttribute('data-bs-target', '#navbarNav');
+            getsysinfo();
+            setrefresh();
+        }
+    </script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Dashboard</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="#">Home</a>
+                    </li>
+                    <!--
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Analytics</a>
+                    </li>
+                    -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showabout()">About</a>
+                    </li>
+                    
+                </ul>
+                <!-- add at right select box for refresh -->
+                <ul class="navbar-nav" style="margin-left: auto;">
+                    <li class="nav-item">
+                        <select class="form-select" id="refreshSelect" onchange="setrefresh()">
+                            <option value="0" selected>Manual refresh</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                            <option value="30">30 seconds</option>
+                            <option value="60">1 minute</option>
+                        </select>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    <!--
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="form-group">
+                    <label for="hostSelect">Select Host:</label>
+                    <select class="form-control" id="hostSelect">
+                        <option value="host1">Host 1</option>
+                        <option value="host2">Host 2</option>
+                        <option value="host3">Host 3</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    -->
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Users online</h5>
+                        <p class="card-text" id="activeusers">N/A</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">System load</h5>
+                        <p class="card-text" id="systemload">N/A</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Network card(s) max load</h5>
+                        <p class="card-text">N/A %</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Accel version</h5>
+                        <p class="card-text" id="accelver">N/A</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">ACCEL-STATS</h5>
+                        <ul class="list-group" id="accelstats">
+                            <!-- <li class="list-group-item">Example line</li> -->
+                            Not retrieved yet
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body" id="users">
+                        <h5 class="card-title">Users list</h5>
+                        <!-- add text field for search -->
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" placeholder="Filter results" aria-label="Filter results" aria-describedby="button-addon2" id="searchUser" onkeyup="filterdata()">
+                        </div>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Interface</th>
+                                    <th>User</th>
+                                    <th>MAC</th>
+                                    <th>IP</th>
+                                    <th>Protocol</th>
+                                    <th>Compression</th>
+                                    <th>State</th>
+                                    <th>Uptime</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
