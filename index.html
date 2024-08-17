@@ -8,6 +8,62 @@
     <script>
         var activeusers = 0;
         var current_section = '';
+        var usersdata = [];
+        var fields = ['ifname', 'user', 'mac', 'ip', 'proto', 'comp', 'state', 'uptime'];
+
+        function doesfiltermatch(session, filter) {
+            for (var i = 0; i < fields.length; i++) {
+                if (session[fields[i]].toLowerCase().includes(filter)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updatedFilter() {
+            var searchUser = document.getElementById('searchUser').value;
+
+            usersdatafiltered = usersdata.filter(function(session) {
+                return doesfiltermatch(session, searchUser.toLowerCase());
+            });
+            // Update select box with pagination based on filtered data count
+            updatePagination();
+            showUsers();
+        }
+
+        function showUsers() {
+            /* show based on current pagination and filter set */
+            var searchUser = document.getElementById('searchUser').value;
+            var paginationSelect = document.getElementById('paginationSelect');
+            var start = parseInt(paginationSelect.value);
+            var end = start + 100;
+            var usersbody = document.getElementById('usersbody');
+            usersdatafiltered = usersdata.filter(function(session) {
+                return doesfiltermatch(session, searchUser.toLowerCase());
+            });
+            var data = usersdatafiltered.slice(start, end);
+            usersbody.innerHTML = '';
+            data.forEach(function(session) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${session.ifname}</td>
+                        <td>${session.user}</td>
+                        <td>${session.mac}</td>
+                        <td>${session.ip}</td>
+                        <td>${session.proto}</td>
+                        <td>${session.comp}</td>
+                        <td>${session.state}</td>
+                        <td>${session.uptime}</td>
+                    `;
+                    //tr.onclick = function() {
+                    // double click to show menu
+                    tr.ondblclick = function() {
+                        showMenu(session);
+                    };
+                    usersbody.appendChild(tr);
+            });
+        }
+
 
         function showabout() {
             var modal = document.createElement('div');
@@ -118,73 +174,23 @@
             modal.show();
         }
 
-        function filterdata() {
+        function updatePagination() {
+            var paginationSelect = document.getElementById('paginationSelect');
             var searchUser = document.getElementById('searchUser').value;
-            var table = document.querySelector('#users table');
-            var tbody = table.querySelector('tbody');
-            // if empty search, show all
-            if (searchUser.length == 0) {
-                tbody.childNodes.forEach(function(tr) {
-                    tr.style.display = '';
-                });
-                return;
-            }
-            tbody.childNodes.forEach(function(tr) {
-                var found = false;
-                tr.childNodes.forEach(function(td) {
-                    if (td.innerText.includes(searchUser)) {
-                        found = true;
-                    }
-                });
-                if (found) {
-                    tr.style.display = '';
-                } else {
-                    tr.style.display = 'none';
-                }
+            paginationSelect.innerHTML = '';
+            var step = 100;
+            usersdatafiltered = usersdata.filter(function(session) {
+                return doesfiltermatch(session, searchUser.toLowerCase());
             });
-        }
-
-        // Make paging for users
-        function activate_paging() {
-            var table = document.querySelector('#users table');
-            var tbody = table.querySelector('tbody');
-            var rows = tbody.childNodes;
-            var rowsPerPage = 10;
-            var currentPage = 0;
-            var numPages = Math.ceil(rows.length / rowsPerPage);
-            var paging = document.createElement('div');
-            paging.className = 'paging';
-            var prevButton = document.createElement('button');
-            prevButton.innerText = 'Previous';
-            prevButton.onclick = function() {
-                if (currentPage > 0) {
-                    currentPage--;
-                    updatePage();
-                }
-            };
-            paging.appendChild(prevButton);
-            var nextButton = document.createElement('button');
-            nextButton.innerText = 'Next';
-            nextButton.onclick = function() {
-                if (currentPage < numPages - 1) {
-                    currentPage++;
-                    updatePage();
-                }
-            };
-            paging.appendChild(nextButton);
-            table.parentNode.insertBefore(paging, table.nextSibling);
-            function updatePage() {
-                var start = currentPage * rowsPerPage;
-                var end = start + rowsPerPage;
-                rows.forEach(function(row, index) {
-                    if (index >= start && index < end) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
+            for (var i = 0; i < usersdatafiltered.length; i += step) {
+                var option = document.createElement('option');
+                option.value = i;
+                option.innerText = i + '-' + (i + step);
+                paginationSelect.appendChild(option);
             }
-            updatePage();
+            paginationSelect.onchange = function() {
+                showUsers();
+            };
         }
 
         function getsysinfo() {
@@ -221,82 +227,12 @@
                     });
                     // we have also sessions with list of users, fields ifname, user, mac, ip, proto, comp, state, uptime
                     // we need to parse it and display it in the users card
-                    var fields = ['ifname', 'user', 'mac', 'ip', 'proto', 'comp', 'state', 'uptime'];
-                    // usersbody clean
-                    var usersbody = document.getElementById('usersbody');
-                    usersbody.innerHTML = '';
-                    data.sessions.forEach(function(session) {
-                        var tr = document.createElement('tr');
-                        fields.forEach(function(field) {
-                            var td = document.createElement('td');
-                            td.innerText = session[field];
-                            tr.appendChild(td);
-                        });
-                        // add tr hover effect, on hover change each cell background color
-                        tr.onmouseover = function() {
-                            tr.childNodes.forEach(function(td) {
-                                // dark grey background color
-                                td.style.backgroundColor = '#343a40';
-                            });
-                        };
-                        tr.onmouseout = function() {
-                            tr.childNodes.forEach(function(td) {
-                                td.style.backgroundColor = '';
-                            });
-                        };
-                        // make tr clickable to show more info about the user
-                        tr.ondblclick = function() {
-                            showMenu(session);
-                        };
-                        usersbody.appendChild(tr);
-                    });
-                    activate_paging();
-                    /*
-                    var users = document.getElementById('users');
-                    users.innerHTML = '';
-                    var table = document.createElement('table');
-                    table.className = 'table table-striped';
-                    var thead = document.createElement('thead');
-                    var tr = document.createElement('tr');
-                    fields.forEach(function(field) {
-                        var th = document.createElement('th');
-                        th.innerText = field;
-                        tr.appendChild(th);
-                    });
-                    thead.appendChild(tr);
-                    table.appendChild(thead);
-                    var tbody = document.createElement('tbody');
-                    data.sessions.forEach(function(session) {
-                        var tr = document.createElement('tr');
-                        fields.forEach(function(field) {
-                            var td = document.createElement('td');
-                            td.innerText = session[field];
-                            tr.appendChild(td);
-                        });
-                        // add tr hover effect, on hover change each cell background color
-                        tr.onmouseover = function() {
-                            tr.childNodes.forEach(function(td) {
-                                // dark grey background color
-                                td.style.backgroundColor = '#343a40';
-                            });
-                        };
-                        tr.onmouseout = function() {
-                            tr.childNodes.forEach(function(td) {
-                                td.style.backgroundColor = '';
-                            });
-                        };
-                        
-
-                        // make tr clickable to show more info about the user
-                        tr.onclick = function() {
-                            //alert('User ' + session.user + ' is connected via ' + session.proto + ' from ' + session.ip + ' with MAC ' + session.mac);
-                            showMenu(session);
-                        };
-                        tbody.appendChild(tr);
-                    });
-                    table.appendChild(tbody);
-                    users.appendChild(table);
+                    /* we have sessions, and each have fields: ifname, user, mac, ip, proto, comp, state, uptime 
+                    Generate table with pagination and search(filter)
                     */
+                   usersdata = data.sessions;
+                   updatePagination();
+                   showUsers();
                 });
         }
 
@@ -431,7 +367,19 @@
                         <h5 class="card-title">Users list</h5>
                         <!-- add text field for search -->
                         <div class="input-group mb-3">
-                            <input type="text" class="form-control" placeholder="Filter results" aria-label="Filter results" aria-describedby="button-addon2" id="searchUser" onkeyup="filterdata()">
+                            <input type="text" class="form-control" placeholder="Filter results" aria-label="Filter results" aria-describedby="button-addon2" id="searchUser" onkeyup="updatedFilter()">
+                        </div>
+                        <!-- add select box for pagination e.g. 0-100 -->
+                        <div class="input-group mb-3">
+                            <select class="form-select" id="paginationSelect">
+                                <!--
+                                <option value="0" selected>0-100</option>
+                                <option value="100">100-200</option>
+                                <option value="200">200-300</option>
+                                <option value="300">300-400</option>
+                                <option value="400">400-500</option>
+                                -->
+                            </select>
                         </div>
                         <table class="table table-striped">
                             <thead>
