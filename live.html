@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Network Traffic Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@2.3.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+
+        #chart-container {
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+        }
+
+        canvas {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1>Live Network Traffic Chart</h1>
+    <div id="chart-container">
+        <canvas id="networkChart"></canvas>
+    </div>
+
+    <script>
+        var ifname = "";
+        // Initial data
+        const data = {
+            labels: [], // Time labels
+            datasets: [
+                {
+                    label: 'RX Speed (Mbps)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    data: [], // RX speed data
+                    fill: true,
+                    tension: 0.4
+                },
+                {
+                    label: 'TX Speed (Mbps)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    data: [], // TX speed data
+                    fill: true,
+                    tension: 0.4
+                }
+            ],
+        };
+
+        // Configuration
+        const config = {
+            type: 'line',
+            data: data,
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: 'Live Network Traffic (RX and TX)'
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'second'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Speed (Mbps)'
+                        }
+                    }
+                }
+            }
+        };
+
+        // Render the chart
+        const ctx = document.getElementById('networkChart').getContext('2d');
+        const networkChart = new Chart(ctx, config);
+        var last_rx_ctr, last_tx_ctr, last_timestamp;
+
+        // Function to fetch data from the API
+        async function fetchNetworkData() {
+            console.log('Fetching network data...');
+            try {
+                // Simulating an API call
+                const response = await fetch('/api/stat?ifname=' + ifname);
+                const result = await response.json();
+
+                // Assuming API returns something like: { rx: 20, tx: 15, timestamp: 1629390000000 }
+                // json fields rx_bytes, tx_bytes, timestamp
+                const rx_ctr = result.rx_bytes / 1024 / 1024 * 8; // Convert bytes to Mbps
+                const tx_ctr = result.tx_bytes / 1024 / 1024 * 8; // Convert bytes to Mbps
+                const timestamp = result.timestamp * 1000; // Convert seconds to milliseconds
+
+                if (last_rx_ctr == undefined) {
+                    last_rx_ctr = rx_ctr;
+                    last_tx_ctr = tx_ctr;
+                    last_timestamp = timestamp;
+                    return;
+                }
+
+                // Calculate the speed (Mbps) based on the counter difference and time difference
+                const rx = (rx_ctr - last_rx_ctr) / ((timestamp - last_timestamp) / 1000);
+                const tx = (tx_ctr - last_tx_ctr) / ((timestamp - last_timestamp) / 1000);
+
+                // Update chart data
+                data.labels.push(new Date(timestamp));
+                data.datasets[0].data.push(rx);
+                data.datasets[1].data.push(tx);
+
+                // Remove old data points if exceeding a certain limit (e.g., 20)
+                if (data.labels.length > 20) {
+                    data.labels.shift();
+                    data.datasets[0].data.shift();
+                    data.datasets[1].data.shift();
+                }
+
+                // Update the chart
+                networkChart.update();
+            } catch (error) {
+                console.error('Error fetching network data:', error);
+            }
+        }
+
+        // Polling interval (e.g., every 2 seconds)
+        window.onload = function() {
+            // page url have get parameter ifname, so we can get it
+            var url = new URL(window.location.href);
+            ifname = url.searchParams.get("ifname");
+            if (ifname == null) {
+                alert("Please provide interface name in the URL parameter 'ifname'");
+            }
+            setInterval(fetchNetworkData, 2000);
+        }
+    </script>
+</body>
+</html>

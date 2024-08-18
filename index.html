@@ -79,7 +79,7 @@
                         </div>
                         <div class="modal-body">
                             <p>ACCEL-PPP Dashboard</p>
-                            <p>Version: 1.0</p>
+                            <p>Version: 0.1</p>
                             <p>Author: <a href="https://github.com/nuclearcat">Denys Fedoryshchenko</a></p>
                             <p>License: LGPL-2.1</p>
                         </div>
@@ -96,8 +96,8 @@
 
 
         function liveIf(ifname) {
-            //alert('Live traffic for interface ' + ifname);
-            window.open('/live?ifname=' + ifname, '_blank');
+            uri = '/api/live?ifname=' + ifname;
+            window.open(uri, '_blank');
             // close modal
             var modal = document.querySelector('.modal');
             var modalInstance = bootstrap.Modal.getInstance(modal);
