@@ -200,7 +200,7 @@
                     //console.log(data);
                     document.getElementById('accelver').innerText = data.accelversion;
                     // systemload returned in format "X.X" and we need to add % to it
-                    document.getElementById('systemload').innerText = data.systemload + ' %';
+                    document.getElementById('systemload').innerText = data.systemload + ' %';                    
                     document.getElementById('accelstats').innerHTML = '';
                     data.accelstats.split('\n').forEach(function(line) {
                         if (line.length > 0) {                            
@@ -326,7 +326,7 @@
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">System load</h5>
+                        <h5 class="card-title">Average CPU load</h5>
                         <p class="card-text" id="systemload">N/A</p>
                     </div>
                 </div>
@@ -334,8 +334,8 @@
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Network card(s) max load</h5>
-                        <p class="card-text">N/A %</p>
+                        <h5 class="card-title">Highest Core load</h5>
+                        <p class="card-text" id="highcoreload">N/A</p>
                     </div>
                 </div>
             </div>

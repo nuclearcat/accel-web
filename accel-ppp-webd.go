@@ -28,6 +28,18 @@ var jwtSecret string
 var bindaddr string
 var noauth bool
 
+func getFileContent(filename string) string {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Scan()
+	return scanner.Text()
+}
+
 func verifyToken(jwtdata string) bool {
 	// parse token
 	token, err := jwt.Parse(jwtdata, func(token *jwt.Token) (interface{}, error) {
@@ -132,39 +144,123 @@ func getSessions() []Session {
 	return sessions
 }
 
-func getSystemload() float32 {
-	// get CPU load from /proc/loadavg
-	file, err := os.Open("/proc/loadavg")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Scan()
-	line := scanner.Text()
-	fields := strings.Fields(line)
-
-	la := convertStringToFloat(fields[0])
-
-	// get number of cpu cores
-	file, err = os.Open("/proc/cpuinfo")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	scanner = bufio.NewScanner(file)
-
+func getCoreCount() int {
+	// get number of cores
+	snapshot1 := getFileContent("/proc/cpuinfo")
+	fields1 := strings.Fields(snapshot1)
 	cores := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "processor") {
+	for _, field := range fields1 {
+		if field == "processor" {
 			cores++
 		}
 	}
+	return cores
+}
 
-	return la / float32(cores) * 100.0
+type Load struct {
+	Total uint64
+	Idle  uint64
+}
+
+type LoadSnapshot struct {
+	TotalLoad Load
+	CoreLoad  []Load
+}
+
+func loadProcessLine(line string) (string, []uint64) {
+	// split by space
+	fields := strings.Fields(line)
+	// get process name
+	process := fields[0]
+	// get process load
+	loads := make([]uint64, 0)
+	for i := 1; i < len(fields); i++ {
+		load, err := strconv.ParseUint(fields[i], 10, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		loads = append(loads, load)
+	}
+	return process, loads
+}
+
+func getCoreLoad(loads []uint64) Load {
+	var load Load
+	// 3rd field is idle
+	numfields := len(loads)
+	for i := 0; i < numfields; i++ {
+		if i == 3 {
+			load.Idle = loads[i]
+		} else {
+			load.Total += loads[i]
+		}
+	}
+	return load
+}
+
+func CoreLoadSnapshot() LoadSnapshot {
+	var totalload LoadSnapshot
+	// get number of cores
+	fh, err := os.Open("/proc/stat")
+	if err != nil {
+		log.Fatal(err)
+	}
+	scanner := bufio.NewScanner(fh)
+	linen := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		linen++
+		// total
+		if linen == 1 {
+			// total
+			_, loads := loadProcessLine(line)
+			for i := 0; i < len(loads); i++ {
+				if i == 3 {
+					totalload.TotalLoad.Idle = loads[i]
+				} else {
+					totalload.TotalLoad.Total += loads[i]
+				}
+			}
+		} else {
+			// core
+			procname, loads := loadProcessLine(line)
+			// check if it's core (starts with cpu)
+			if strings.HasPrefix(procname, "cpu") {
+				coreload := getCoreLoad(loads)
+				totalload.CoreLoad = append(totalload.CoreLoad, coreload)
+			}
+		}
+	}
+	return totalload
+}
+
+func getSystemload() float32 {
+	var diffLoad LoadSnapshot
+	// snapshots with delay of 1 sec
+	snapshot1 := CoreLoadSnapshot()
+	time.Sleep(1 * time.Second)
+	snapshot2 := CoreLoadSnapshot()
+
+	// calculate diff
+	diffLoad.TotalLoad.Total = snapshot2.TotalLoad.Total - snapshot1.TotalLoad.Total
+	diffLoad.TotalLoad.Idle = snapshot2.TotalLoad.Idle - snapshot1.TotalLoad.Idle
+	numcores := len(snapshot1.CoreLoad)
+	if numcores != len(snapshot2.CoreLoad) {
+		log.Fatal("Number of cores mismatch")
+	}
+	if numcores == 0 {
+		log.Fatal("No cores found?")
+	}
+	for i := 0; i < numcores; i++ {
+		diffLoad.CoreLoad = append(diffLoad.CoreLoad, Load{})
+		diffLoad.CoreLoad[i].Total = snapshot2.CoreLoad[i].Total - snapshot1.CoreLoad[i].Total
+	}
+	// for now calculate just total load vs idle
+	sumTotal := diffLoad.TotalLoad.Total + diffLoad.TotalLoad.Idle
+	//log.Println("Total: ", diffLoad.TotalLoad.Total, "Idle: ", diffLoad.TotalLoad.Idle)
+	totalCPUbusy := diffLoad.TotalLoad.Total * 100 / sumTotal
+	//log.Println("Total CPU busy: ", totalCPUbusy)
+	return convertStringToFloat(strconv.FormatUint(totalCPUbusy, 10))
 }
 
 func handlerSysinfo(w http.ResponseWriter, r *http.Request) {
@@ -202,18 +298,6 @@ func handleTerm(w http.ResponseWriter, r *http.Request) {
 func handleLive(w http.ResponseWriter, r *http.Request) {
 	// return live.html
 	http.ServeFile(w, r, "live.html")
-}
-
-func getFileContent(filename string) string {
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Scan()
-	return scanner.Text()
 }
 
 func handleStat(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +449,6 @@ func main() {
 		handlerSysinfo(w, r)
 	})
 
-	// /api/terminate?ifname=<ifname>
 	http.HandleFunc("/api/terminate", func(w http.ResponseWriter, r *http.Request) {
 		if !verifyAuth(w, r) {
 			return
@@ -373,7 +456,6 @@ func main() {
 		handleTerm(w, r)
 	})
 
-	// /live?ifname=<ifname>
 	http.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
 		if !verifyAuth(w, r) {
 			return
@@ -382,7 +464,6 @@ func main() {
 		handleLive(w, r)
 	})
 
-	// /api/stat?ifname=' + ifname);
 	http.HandleFunc("/api/stat", func(w http.ResponseWriter, r *http.Request) {
 		if !verifyAuth(w, r) {
 			return
