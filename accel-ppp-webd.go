@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"log"
+	"log/syslog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -29,6 +30,12 @@ var bindaddr string
 var noauth bool
 
 func getFileContent(filename string) string {
+	// verify if file exists
+	_, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		log.Println("File not found: " + filename)
+		return ""
+	}
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
@@ -255,11 +262,8 @@ func getSystemload() float32 {
 		diffLoad.CoreLoad = append(diffLoad.CoreLoad, Load{})
 		diffLoad.CoreLoad[i].Total = snapshot2.CoreLoad[i].Total - snapshot1.CoreLoad[i].Total
 	}
-	// for now calculate just total load vs idle
 	sumTotal := diffLoad.TotalLoad.Total + diffLoad.TotalLoad.Idle
-	//log.Println("Total: ", diffLoad.TotalLoad.Total, "Idle: ", diffLoad.TotalLoad.Idle)
 	totalCPUbusy := diffLoad.TotalLoad.Total * 100 / sumTotal
-	//log.Println("Total CPU busy: ", totalCPUbusy)
 	return convertStringToFloat(strconv.FormatUint(totalCPUbusy, 10))
 }
 
@@ -398,14 +402,28 @@ func genJWTToken(username string) {
 	log.Println(tokenString)
 }
 
-/*
-func CPUBenchmark() {
-
+func setLogSyslog() {
+	// set log to syslog
+	logwriter, err := syslog.New(syslog.LOG_NOTICE, "accel-ppp-webd")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(logwriter)
 }
-*/
+
+func setLogFilename(filename string) {
+	// set log to file
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(file)
+}
 
 func main() {
 	var genuser string
+	var stderr bool
+	var logfilename string
 	// arguments:
 	// -jwtsecret <secret>
 	flag.StringVar(&jwtSecret, "jwtsecret", "", "JWT secret")
@@ -415,8 +433,22 @@ func main() {
 	flag.BoolVar(&noauth, "noauth", false, "Disable authentication")
 	// -genuser <username>
 	flag.StringVar(&genuser, "genuser", "", "Generate JWT token for username")
+	// -stderr
+	flag.BoolVar(&stderr, "stderr", false, "Log to stderr or file, otherwise to syslog(default)")
+	// -logfilename <filename>
+	flag.StringVar(&logfilename, "logfile", "", "Log filename")
 
 	flag.Parse()
+
+	if stderr {
+		if logfilename != "" {
+			setLogFilename(logfilename)
+		} else {
+			log.SetOutput(os.Stderr)
+		}
+	} else {
+		setLogSyslog()
+	}
 
 	// generate JWT token for user
 	if genuser != "" {
