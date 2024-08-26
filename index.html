@@ -30,6 +30,73 @@
             updatePagination();
             showUsers();
         }
+        function showModal(data) {
+            var modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.tabIndex = -1;
+            modal.role = 'dialog';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">User information</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body text-monospace">
+                            <pre>
+` + data + `
+                            </pre>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            var modal = new bootstrap.Modal(modal);
+            modal.show();
+        }
+
+        // selectbox with disconnect/live traffic/terminate
+        function addActionMenu(td) {
+            var select = document.createElement('select');
+            select.className = 'form-select';
+            select.innerHTML = `
+                <option value="none" selected>Choose action</option>
+                <option value="live">Live traffic</option>
+                <option value="terminate">Terminate</option>
+                <option value="shaperinfo">Shaper basic info</option>
+                <option value="shaperadvinfo">Shaper advanced info</option>
+                <option value="showrad">Show RADIUS attributes</option>
+            `;
+            td.appendChild(select);
+            select.onchange = function() {
+                ifname = td.parentElement.children[0].innerText;
+                if (select.value == 'live') {
+                    liveIf(ifname);
+                } else if (select.value == 'terminate') {
+                    termIf(ifname);
+                } else if (select.value == 'shaperinfo') {
+                    res = IfAction(ifname, 'shaperinfo');
+                    if (res) {
+                        showModal(res);
+                    }
+                } else if (select.value == 'shaperadvinfo') {
+                    res = IfAction(ifname, 'shaperadvinfo');
+                    if (res) {
+                        showModal(res);
+                    }
+                } else if (select.value == 'showrad') {
+                    res = IfAction(ifname, 'showrad');
+                    if (res) {
+                        showModal(res);
+                    }
+                }
+                // return back to default
+                select.value = 'none';
+            };
+        }
 
         function showUsers() {
             /* show based on current pagination and filter set */
@@ -54,7 +121,23 @@
                         <td>${session.comp}</td>
                         <td>${session.state}</td>
                         <td>${session.uptime}</td>
+                        <td></td>
                     `;
+                    // add on hover effect to highlight row on mouse over
+                    tr.onmouseover = function() {
+                        tr.className = 'table-primary text-dark';
+                    };
+                    tr.onmouseout = function() {
+                        if (usersbody.children.length % 2 == 0) {
+                            tr.className = 'table-active text-dark';
+                        } else {
+                            tr.className = '';
+                        }
+                    };
+                    // if ifname and user set, add action menu
+                    if (session.ifname != '' && session.user != '') {
+                        addActionMenu(tr.children[8]);
+                    };
                     //tr.onclick = function() {
                     // double click to show menu
                     tr.ondblclick = function() {
@@ -94,6 +177,22 @@
             modal.show();
         }
 
+        function IfAction(ifname, action) {
+            uri = '/api/ifaction?ifname=' + ifname + '&action=' + action;
+            fetch(uri)
+                .then(response => response.json())
+                .then(data => {
+                    //console.log(data);
+                    if (data.result == 'ok') {
+                        showModal(data.content);
+                    } else {
+                        alert('Error ' + action + ' interface ' + ifname + ': ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error ' + action + ' interface ' + ifname + ': ' + error);
+                });
+        }
 
         function liveIf(ifname) {
             uri = '/live?ifname=' + ifname;
@@ -350,7 +449,7 @@
         </div>
 
         <div class="row mt-4">
-            <div class="col-md-6">
+            <div class="col-md-3">
                 <div class="card">
                     <div class="card-body">
                         <h5 class="card-title">ACCEL-STATS</h5>
@@ -361,7 +460,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-9">
                 <div class="card">
                     <div class="card-body" id="users">
                         <h5 class="card-title">Users list</h5>
@@ -392,6 +491,7 @@
                                     <th>Compression</th>
                                     <th>State</th>
                                     <th>Uptime</th>
+                                    <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody id="usersbody">

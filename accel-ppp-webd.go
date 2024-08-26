@@ -42,9 +42,17 @@ func getFileContent(filename string) string {
 	}
 	defer file.Close()
 
+	// read all lines
+	//scanner := bufio.NewScanner(file)
+	//scanner.Scan()
+	//return scanner.Text()
+	content := ""
 	scanner := bufio.NewScanner(file)
-	scanner.Scan()
-	return scanner.Text()
+	for scanner.Scan() {
+		content += scanner.Text()
+		content += "\n"
+	}
+	return content
 }
 
 func verifyToken(jwtdata string) bool {
@@ -375,6 +383,62 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(output)
 }
 
+type IfactionResult struct {
+	Result  string `json:"result"`
+	Content string `json:"content"`
+}
+
+func handlerIfaction(w http.ResponseWriter, r *http.Request) {
+	var result IfactionResult
+	ifname := r.URL.Query().Get("ifname")
+	action := r.URL.Query().Get("action")
+	if ifname == "" {
+		result.Result = "error"
+		result.Content = "No ifname specified"
+		json.NewEncoder(w).Encode(result)
+		http.Error(w, "No ifname specified", http.StatusBadRequest)
+		return
+	}
+	if action == "" {
+		result.Result = "error"
+		result.Content = "No action specified"
+		json.NewEncoder(w).Encode(result)
+		http.Error(w, "No action specified", http.StatusBadRequest)
+		return
+	}
+	// sanitize ifname ^[a-z0-9]+$
+	re := regexp.MustCompile("^[a-z0-9]+$")
+	if !re.MatchString(ifname) {
+		result.Result = "error"
+		result.Content = "Invalid ifname"
+		json.NewEncoder(w).Encode(result)
+		http.Error(w, "Invalid ifname", http.StatusBadRequest)
+		return
+	}
+	// action - showshaper
+	if action == "shaperinfo" {
+		content := ""
+		output := execCommand("tc qdisc show dev " + ifname)
+		content += "Qdisc:\n" + output + "\n"
+		output = execCommand("tc class show dev " + ifname)
+		content += "Class:\n" + output + "\n"
+		output = execCommand("tc filter show dev " + ifname)
+		content += "Filter:\n" + output + "\n"
+		result.Result = "ok"
+		result.Content = content
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+	// action - showrad (/var/run/radattr.<ifname>)
+	if action == "showrad" {
+		content := getFileContent("/var/run/radattr." + ifname)
+		result.Result = "ok"
+		result.Content = content
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+}
+
 func verifyStart() string {
 	// is accel-cmd available?
 	_, err := exec.LookPath("accel-cmd")
@@ -440,12 +504,10 @@ func main() {
 
 	flag.Parse()
 
-	if stderr {
-		if logfilename != "" {
-			setLogFilename(logfilename)
-		} else {
-			log.SetOutput(os.Stderr)
-		}
+	if logfilename != "" {
+		setLogFilename(logfilename)
+	} else if stderr {
+		log.SetOutput(os.Stderr)
 	} else {
 		setLogSyslog()
 	}
@@ -462,16 +524,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !verifyAuth(w, r) {
-			return
-		}
-		http.ServeFile(w, r, "index.html")
-	})
-
 	// login.html
 	http.HandleFunc("/login.html", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "login.html")
+	})
+
+	// /api/ifaction?ifname=<ifname>&action=<command>
+	http.HandleFunc("/api/ifaction", func(w http.ResponseWriter, r *http.Request) {
+		if !verifyAuth(w, r) {
+			return
+		}
+		handlerIfaction(w, r)
 	})
 
 	http.HandleFunc("/api/sysinfo", func(w http.ResponseWriter, r *http.Request) {
@@ -506,6 +569,13 @@ func main() {
 	// /api/login verify token in body as json {token: <token>} and set it in cookie as httponly
 	http.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		handleLogin(w, r)
+	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !verifyAuth(w, r) {
+			return
+		}
+		http.ServeFile(w, r, "index.html")
 	})
 
 	log.Fatal(http.ListenAndServe(bindaddr, nil))
