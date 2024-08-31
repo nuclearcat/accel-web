@@ -27,10 +27,41 @@
             border-radius: 8px;
             box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
         }
+
+        /* centered  and beautify current values */
+        #current-values {
+            text-align: center;
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            margin: auto;
+
+        }
+
+        #current-values h2 {
+            margin-bottom: 10px;
+        }
+
+        #current-values p {
+            margin: 5px 0;
+        }
+
+        #current-values span {
+            font-weight: bold;
+        }
+
     </style>
 </head>
 <body>
-    <h1>Live Network Traffic Chart</h1>
+    <div id="current-values">
+        <h2>Live traffic monitoring</h2>
+        <p>Interface: <span id="ifname">Please wait...</span></p>
+        <p>Current RX Speed: <span id="rx-speed">Please wait...</span> Mbps</p>
+        <p>Current TX Speed: <span id="tx-speed">Please wait...</span> Mbps</p>
+    </div>
     <div id="chart-container">
         <canvas id="networkChart"></canvas>
     </div>
@@ -103,7 +134,7 @@
 
         // Function to fetch data from the API
         async function fetchNetworkData() {
-            console.log('Fetching network data...');
+            //console.log('Fetching network data...');
             try {
                 // Simulating an API call
                 const response = await fetch('/api/stat?ifname=' + ifname);
@@ -137,6 +168,10 @@
                     data.datasets[0].data.shift();
                     data.datasets[1].data.shift();
                 }
+                // set current values
+                document.getElementById('ifname').innerText = ifname;
+                document.getElementById('rx-speed').innerText = rx.toFixed(2);
+                document.getElementById('tx-speed').innerText = tx.toFixed(2);
 
                 // Update the chart
                 networkChart.update();

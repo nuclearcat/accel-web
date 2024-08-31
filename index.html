@@ -195,7 +195,7 @@
         }
 
         function liveIf(ifname) {
-            uri = '/live?ifname=' + ifname;
+            uri = '/live.html?ifname=' + ifname;
             window.open(uri, '_blank');
             // close modal
             var modal = document.querySelector('.modal');
@@ -337,12 +337,20 @@
                 });
         }
 
-        function test() {
-            alert('Test button clicked, it will create artifical error to verify logging');
-            // create error with timer
-            setTimeout(function() {
-                throw new Error('Test error');
-            }, 1000);
+        function logout() {
+            fetch('/api/logout')
+                .then(response => response.json())
+                .then(data => {
+                    //console.log(data);
+                    if (data.result == 'ok') {
+                        window.location.href = '/login.html';
+                    } else {
+                        alert('Error logging out: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error logging out: ' + error);
+                });
         }
 
         var refreshInterval = 0;
@@ -382,7 +390,7 @@
                         <a class="nav-link active" aria-current="page" href="#">Home</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="test()">Test</a>
+                        <a class="nav-link" href="#" onclick="logout()">Logout</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" onclick="showabout()">About</a>

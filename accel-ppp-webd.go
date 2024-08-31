@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -383,6 +384,20 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(output)
 }
 
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	// remove cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jwt",
+		Value:    "",
+		HttpOnly: true,
+		Expires:  time.Unix(0, 0),
+	})
+	// return json result=ok
+	output := make(map[string]string)
+	output["result"] = "ok"
+	json.NewEncoder(w).Encode(output)
+}
+
 type IfactionResult struct {
 	Result  string `json:"result"`
 	Content string `json:"content"`
@@ -524,10 +539,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// login.html
-	http.HandleFunc("/login.html", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "login.html")
-	})
+	/*
+		http.HandleFunc("/login.html", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, "login.html")
+		})
+	*/
 
 	// /api/ifaction?ifname=<ifname>&action=<command>
 	http.HandleFunc("/api/ifaction", func(w http.ResponseWriter, r *http.Request) {
@@ -555,7 +571,6 @@ func main() {
 		if !verifyAuth(w, r) {
 			return
 		}
-
 		handleLive(w, r)
 	})
 
@@ -571,9 +586,31 @@ func main() {
 		handleLogin(w, r)
 	})
 
+	// /api/logout
+	http.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {
+		handleLogout(w, r)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// always allow /login.html
+		if r.URL.Path == "/login.html" {
+			http.ServeFile(w, r, "login.html")
+			return
+		}
 		if !verifyAuth(w, r) {
 			return
+		}
+		// if requested *.html check if file exists
+		if strings.HasSuffix(r.URL.Path, ".html") {
+			fname := filepath.Base(r.URL.Path)
+			_, err := os.Stat(fname)
+			if os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			} else {
+				http.ServeFile(w, r, r.URL.Path[1:])
+				return
+			}
 		}
 		http.ServeFile(w, r, "index.html")
 	})
