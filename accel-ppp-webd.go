@@ -98,7 +98,7 @@ func execCommand(command string) string {
 	cmd := exec.Command("sh", "-c", command)
 	out, err := cmd.Output()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("execCommand() error: ", err)
 	}
 
 	return string(out)
@@ -430,8 +430,18 @@ func handlerIfaction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ifname", http.StatusBadRequest)
 		return
 	}
+	_, err := os.Stat("/sys/class/net/" + ifname)
+	if os.IsNotExist(err) {
+		result.Result = "error"
+		result.Content = "Interface not found"
+		json.NewEncoder(w).Encode(result)
+		http.Error(w, "Interface not found", http.StatusBadRequest)
+		return
+	}
+
 	// action - showshaper
 	if action == "shaperinfo" {
+		//verify if interface exists
 		content := ""
 		output := execCommand("tc qdisc show dev " + ifname)
 		content += "Qdisc:\n" + output + "\n"
