@@ -529,18 +529,18 @@ func main() {
 
 	flag.Parse()
 
+	// generate JWT token for user
+	if genuser != "" {
+		genJWTToken(genuser)
+		return
+	}
+
 	if logfilename != "" {
 		setLogFilename(logfilename)
 	} else if stderr {
 		log.SetOutput(os.Stderr)
 	} else {
 		setLogSyslog()
-	}
-
-	// generate JWT token for user
-	if genuser != "" {
-		genJWTToken(genuser)
-		return
 	}
 
 	// check if start requirements are met
